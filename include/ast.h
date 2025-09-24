@@ -5,11 +5,13 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "llvm/IR/Value.h"
 
 // base class with virtual destructor
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
+  virtual llvm::Value* codegen()=0;
 };
 // expression class for numbers
 
@@ -18,6 +20,7 @@ class NumExprAST : public ExprAST {
 
 public:
   NumExprAST(double val) : val(val) {}
+  llvm::Value* codegen() override;
 };
 // expression class for variables
 class VarExprAST : public ExprAST {
@@ -25,6 +28,7 @@ class VarExprAST : public ExprAST {
 
 public:
   VarExprAST(const std::string &name) : name(name) {}
+ llvm::Value* codegen() override;
 };
 // expression class for binary operators
 class BinExprAST : public ExprAST {
@@ -35,6 +39,7 @@ public:
   BinExprAST(char op, std::unique_ptr<ExprAST> lhs,
              std::unique_ptr<ExprAST> rhs)
       : op(op), lhs(std::move(lhs)), rhs(std::move(rhs)) {}
+     llvm::Value* codegen() override;
 };
 
 // expression class for function calls
@@ -46,6 +51,7 @@ public:
   CallExprAST(const std::string &callee,
               std::vector<std::unique_ptr<ExprAST>> args)
       : callee(callee), args(std::move(args)) {}
+     llvm::Value* codegen() override;
 };
 
 class PrototypeAST {
@@ -55,6 +61,7 @@ class PrototypeAST {
 public:
   PrototypeAST(const std::string &name, std::vector<std::string> args)
       : name(name), args(std::move(args)) {}
+    llvm::Function* codegen() ;
 };
 class functionAST {
   std::unique_ptr<PrototypeAST> proto;
@@ -64,5 +71,6 @@ public:
   functionAST(std::unique_ptr<PrototypeAST> proto,
               std::unique_ptr<ExprAST> body)
       : proto(std::move(proto)), body(std::move(body)) {}
+      
 };
 #endif
