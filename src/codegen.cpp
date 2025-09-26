@@ -4,36 +4,39 @@
 #include "lexer.h"
 #include "parser.h"
 #include "llvm/ADT/APFloat.h"
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Value.h>
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Value.h"
+#include "llvm/IR/Verifier.h"
 
-std::unique_ptr<llvm::LLVMContext> TheContext;
-std::unique_ptr<llvm::IRBuilder<>> Builder;
-std::unique_ptr<llvm::Module> TheModule;
-std::map<std::string, llvm::Value *> NamedValues;
+using namespace llvm;
 
-llvm::Value *LogErrorV(const char *str) {
+std::unique_ptr<LLVMContext> TheContext;
+std::unique_ptr<IRBuilder<>> Builder;
+std::unique_ptr<Module> TheModule;
+std::map<std::string, Value *> NamedValues;
+
+Value *LogErrorV(const char *str) {
   LogError(str);
   return nullptr;
 }
 
-llvm::Value *NumExprAST::codegen() {
-  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(val));
+Value *NumExprAST::codegen() {
+  return ConstantFP::get(*TheContext, APFloat(val));
 }
 
-llvm::Value *VarExprAST::codegen() {
-  llvm::Value *V = NamedValues[name];
+Value *VarExprAST::codegen() {
+  Value *V = NamedValues[name];
   if (!V) {
     LogErrorV("Unknown variable name");
   }
   return V;
 }
 
-llvm::Value *BinExprAST::codegen() {
-  llvm::Value *L = lhs->codegen();
-  llvm::Value *R = rhs->codegen();
+Value *BinExprAST::codegen() {
+  Value *L = lhs->codegen();
+  Value *R = rhs->codegen();
 
   if (!L || !R) {
     return nullptr;
@@ -47,23 +50,22 @@ llvm::Value *BinExprAST::codegen() {
     return Builder->CreateFMul(L, R, "multmp");
   case '<':
     L = Builder->CreateFCmpULT(L, R, "cmtmp");
-    return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
-                                 "booltmp");
+    return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
 
   default:
     return LogErrorV("invalid binary operator");
   }
 }
 
-llvm::Value *CallExprAST::codegen() {
-  llvm::Function *calleeF = TheModule->getFunction(callee);
+Value *CallExprAST::codegen() {
+  Function *calleeF = TheModule->getFunction(callee);
   if (!calleeF) {
     return LogErrorV("Unknown function referenced");
   }
   if (calleeF->arg_size() != args.size()) {
     return LogErrorV("Incorrect # arguments passed");
   }
-  std::vector<llvm::Value *> argsv;
+  std::vector<Value *> argsv;
   for (unsigned i = 0; i < args.size(); ++i) {
     argsv.push_back(args[i]->codegen());
     if (!argsv.back()) {
@@ -73,17 +75,44 @@ llvm::Value *CallExprAST::codegen() {
   return Builder->CreateCall(calleeF, argsv, "calltmp");
 }
 
-llvm::Function *PrototypeAST::codegen() {
-  std::vector<llvm::Type *> Doubles(args.size(),
-                                    llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, name, TheModule.get());
+Function *PrototypeAST::codegen() {
+  std::vector<Type *> Doubles(args.size(), Type::getDoubleTy(*TheContext));
+  FunctionType *FT =
+      FunctionType::get(Type::getDoubleTy(*TheContext), Doubles, false);
+  Function *F =
+      Function::Create(FT, Function::ExternalLinkage, name, TheModule.get());
 
   unsigned indx = 0;
   for (auto &arg : F->args()) {
     arg.setName(args[indx++]);
   }
   return F;
+}
+
+Function *FunctionAST::codegen() {
+  Function *TheFunction = TheModule->getFunction(proto->getName());
+  if (!TheFunction) {
+    TheFunction = proto->codegen();
+  }
+  if (!TheFunction) {
+    return nullptr;
+  }
+  if (!TheFunction->empty()) {
+    return (Function *)LogErrorV("Function cannot be redefined.");
+  }
+  BasicBlock *BB = BasicBlock::Create(*TheContext, "entry", TheFunction);
+  Builder->SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &arg : TheFunction->args()) {
+    NamedValues[std::string(arg.getName())] = &arg;
+  }
+
+  if (Value *RetVal = body->codegen()) {
+    Builder->CreateRet(RetVal);
+    verifyFunction(*TheFunction);
+    return TheFunction;
+  }
+  TheFunction->eraseFromParent();
+  return nullptr;
 }

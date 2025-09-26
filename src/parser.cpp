@@ -124,14 +124,14 @@ std::unique_ptr<PrototypeAST> ParsePrototype() {
   getNextTok();
   return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
 }
-std::unique_ptr<functionAST> ParseDefinition() {
+std::unique_ptr<FunctionAST> ParseDefinition() {
   getNextTok();
   auto Proto = ParsePrototype();
   if (!Proto) {
     return nullptr;
   }
   if (auto exp = ParseExpression()) {
-    return std::make_unique<functionAST>(std::move(Proto), std::move(exp));
+    return std::make_unique<FunctionAST>(std::move(Proto), std::move(exp));
   }
   return nullptr;
 }
@@ -139,10 +139,10 @@ std::unique_ptr<PrototypeAST> ParseExtern() {
   getNextTok();
   return ParsePrototype();
 }
-std::unique_ptr<functionAST> ParseTopLevelExpr() {
+std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto expr = ParseExpression()) {
     auto Proto = std::make_unique<PrototypeAST>("", std::vector<std::string>());
-    return std::make_unique<functionAST>(std::move(Proto), std::move(expr));
+    return std::make_unique<FunctionAST>(std::move(Proto), std::move(expr));
   }
   return nullptr;
 }
