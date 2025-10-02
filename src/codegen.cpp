@@ -111,6 +111,8 @@ Function *FunctionAST::codegen() {
   if (Value *RetVal = body->codegen()) {
     Builder->CreateRet(RetVal);
     verifyFunction(*TheFunction);
+    // Optimize the function
+    TheFPM->run(*TheFunction, *TheFAM);
     return TheFunction;
   }
   TheFunction->eraseFromParent();

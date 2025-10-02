@@ -10,6 +10,35 @@ static void InitModule() {
   TheContext = std::make_unique<llvm::LLVMContext>();
   TheModule = std::make_unique<llvm::Module>("kaleidoscope-jit", *TheContext);
   Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+
+  // Create new pass and analysis managers.
+  TheFPM = std::make_unique<llvm::FunctionPassManager>();
+  TheLAM = std::make_unique<llvm::LoopAnalysisManager>();
+  TheFAM = std::make_unique<llvm::FunctionAnalysisManager>();
+  TheCGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
+  TheMAM = std::make_unique<llvm::ModuleAnalysisManager>();
+  ThePIC = std::make_unique<llvm::PassInstrumentationCallbacks>();
+  TheSI =
+      std::make_unique<llvm::StandardInstrumentations>(*TheContext,
+                                                       /*DebugLogging*/ true);
+  TheSI->registerCallbacks(*ThePIC, TheMAM.get());
+
+  // Add transform passes.
+  // Do simple "peephole" optimizations and bit-twiddling optzns.
+  TheFPM->addPass(llvm::InstCombinePass());
+  // Reassociate expressions.
+  TheFPM->addPass(llvm::ReassociatePass());
+  // Eliminate Common SubExpressions.
+  TheFPM->addPass(llvm::GVNPass());
+  // Simplify the control flow graph (deleting unreachable blocks, etc).
+  TheFPM->addPass(llvm::SimplifyCFGPass());
+
+  // Register analysis passes used in these transform passes.
+  llvm::PassBuilder PB;
+  PB.registerModuleAnalyses(*TheMAM);
+  PB.registerFunctionAnalyses(*TheFAM);
+  PB.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
 }
 
 static void HandleDefinition() {
@@ -72,6 +101,9 @@ static void MainLoop() {
   }
 }
 int main() {
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmPrinter();
 
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
@@ -81,6 +113,6 @@ int main() {
   InitModule();
   getNextTok();
   MainLoop();
-  TheModule->print(llvm::errs(), nullptr);
+  TheJIT = std::make_unique<llvm::orc::KaleidoscopeJIT>();
   return 0;
 }
